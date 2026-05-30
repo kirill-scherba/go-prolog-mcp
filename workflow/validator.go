@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -44,10 +45,32 @@ func Validate(facts []prolog.ScenarioFact, statuses []string) (*ValidationResult
 
 	result := &ValidationResult{}
 
-	result.Conflicts, _ = eng.QueryConflicts()
-	result.Deadlocks, _ = eng.QueryDeadlocks()
-	result.Unreachable, _ = eng.QueryUnreachable()
-	result.Cycles, _ = eng.QueryCycles()
+	var errs []error
+
+	if conflicts, err := eng.QueryConflicts(); err != nil {
+		errs = append(errs, fmt.Errorf("query conflicts: %w", err))
+	} else {
+		result.Conflicts = conflicts
+	}
+	if deadlocks, err := eng.QueryDeadlocks(); err != nil {
+		errs = append(errs, fmt.Errorf("query deadlocks: %w", err))
+	} else {
+		result.Deadlocks = deadlocks
+	}
+	if unreachable, err := eng.QueryUnreachable(); err != nil {
+		errs = append(errs, fmt.Errorf("query unreachable: %w", err))
+	} else {
+		result.Unreachable = unreachable
+	}
+	if cycles, err := eng.QueryCycles(); err != nil {
+		errs = append(errs, fmt.Errorf("query cycles: %w", err))
+	} else {
+		result.Cycles = cycles
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("prolog queries failed: %w", errors.Join(errs...))
+	}
 
 	result.Valid = len(result.Conflicts) == 0 &&
 		len(result.Deadlocks) == 0 &&
@@ -68,8 +91,8 @@ func (r *ValidationResult) String() string {
 	if len(r.Conflicts) > 0 {
 		b.WriteString(fmt.Sprintf("⚡ CONFLICTS (%d):\n", len(r.Conflicts)))
 		for _, c := range r.Conflicts {
-			b.WriteString(fmt.Sprintf("  • %q in %q: %q and %q can both match the same item\n",
-				c.From, c.A, c.B))
+		b.WriteString(fmt.Sprintf("  • from %q: %q and %q can both match the same item\n",
+			c.From, c.A, c.B))
 		}
 	}
 
