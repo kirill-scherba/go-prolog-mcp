@@ -86,6 +86,12 @@ func (s *Server) Run() error {
 }
 
 func (s *Server) handleRequest(req request) {
+	// Notifications (no ID) — must NOT send a response per JSON-RPC spec.
+	// Check both nil (field absent) and explicit JSON null.
+	if req.ID == nil || string(req.ID) == "null" {
+		return
+	}
+
 	switch req.Method {
 	case "initialize":
 		s.handleInitialize(req)
