@@ -37,3 +37,35 @@ func NewEngineFromFile(path string) (*prolog.Engine, error) {
 
 	return NewEngine(facts, statuses)
 }
+
+// SelectTasks executes the task selection logic for the given board items.
+func SelectTasks(cfgJSON string, tasks []prolog.TaskFact) ([]prolog.TriggerResult, error) {
+	facts, statuses, err := LoadFromJSON(cfgJSON)
+	if err != nil {
+		return nil, err
+	}
+
+	program := prolog.BuildProgramWithTasks(facts, statuses, tasks)
+	eng := prolog.New()
+	if err := eng.LoadProgram(program); err != nil {
+		return nil, err
+	}
+
+	return eng.QueryTriggerable()
+}
+
+// SelectTasksFile executes the task selection logic using a config file.
+func SelectTasksFile(configPath string, tasks []prolog.TaskFact) ([]prolog.TriggerResult, error) {
+	facts, statuses, err := LoadFromFile(configPath)
+	if err != nil {
+		return nil, err
+	}
+
+	program := prolog.BuildProgramWithTasks(facts, statuses, tasks)
+	eng := prolog.New()
+	if err := eng.LoadProgram(program); err != nil {
+		return nil, err
+	}
+
+	return eng.QueryTriggerable()
+}

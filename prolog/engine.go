@@ -166,6 +166,76 @@ func (e *Engine) QueryScenarios() ([]string, error) {
 	return results, sols.Err()
 }
 
+// QueryRaw executes an arbitrary query and returns all solutions as a list of maps.
+func (e *Engine) QueryRaw(queryStr string) ([]map[string]string, error) {
+	sols, err := e.p.Query(queryStr)
+	if err != nil {
+		return nil, err
+	}
+	defer sols.Close()
+
+	var results []map[string]string
+
+	for sols.Next() {
+		m := make(map[string]interface{})
+		if err := sols.Scan(m); err != nil {
+			return nil, err
+		}
+		
+		res := make(map[string]string)
+		for k, v := range m {
+			res[k] = fmt.Sprint(v)
+		}
+		results = append(results, res)
+	}
+	return results, sols.Err()
+}
+
+// TaskFact represents a board item as Prolog facts.
+type TaskFact struct {
+	ID     int
+	Status string
+	Labels []string
+}
+
+// TriggerResult holds a task selection result.
+type TriggerResult struct {
+	IssueID      int    `prolog:"IssueID"`
+	ScenarioName string `prolog:"ScenarioName"`
+}
+
+// BuildProgramWithTasks combines rules, scenarios, and task facts.
+func BuildProgramWithTasks(scenarios []ScenarioFact, boardStatuses []string, tasks []TaskFact) string {
+	var b strings.Builder
+	b.WriteString(BuildProgram(scenarios, boardStatuses))
+	b.WriteString("\n")
+
+	for _, t := range tasks {
+		b.WriteString(fmt.Sprintf("task(%d, '%s', %s).\n",
+			t.ID, escapeAtom(t.Status), labelList(t.Labels)))
+	}
+	return b.String()
+}
+
+// QueryTriggerable returns all (IssueID, ScenarioName) pairs that can be triggered.
+func (e *Engine) QueryTriggerable() ([]TriggerResult, error) {
+	sols, err := e.p.Query("can_trigger(IssueID, ScenarioName).")
+	if err != nil {
+		return nil, fmt.Errorf("prolog query: %w", err)
+	}
+	defer sols.Close()
+
+	var results []TriggerResult
+	for sols.Next() {
+		var r TriggerResult
+		if err := sols.Scan(&r); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		results = append(results, r)
+	}
+	return results, sols.Err()
+}
+
 func escapeAtom(s string) string {
 	return strings.ReplaceAll(s, "'", "\\'")
 }
