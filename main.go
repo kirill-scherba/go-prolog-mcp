@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -17,10 +18,17 @@ import (
 )
 
 func main() {
-	// First argument (optional) is config path for CLI usage.
-	if len(os.Args) > 1 {
-		path := os.Args[1]
+	// CLI flag for config path.
+	configPath := flag.String("config", "", "Path to orchestrator config.json for CLI validation")
+	flag.Parse()
 
+	// Also accept positional argument for backward compatibility.
+	path := *configPath
+	if path == "" && flag.NArg() > 0 {
+		path = flag.Arg(0)
+	}
+
+	if path != "" {
 		result, err := workflow.ValidateFile(path)
 		if err != nil {
 			log.Fatalf("ERROR: %v", err)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 
 	"github.com/kirill-scherba/go-prolog-mcp/prolog"
 )
@@ -95,6 +96,7 @@ func ConvertToFacts(cfg OrcConfig) ([]prolog.ScenarioFact, []string, error) {
 	for s := range statusSet {
 		statuses = append(statuses, s)
 	}
+	sort.Strings(statuses)
 
 	return facts, statuses, nil
 }
