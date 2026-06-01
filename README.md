@@ -80,21 +80,21 @@ go-prolog-mcp /path/to/config.json
 Example output:
 
 ```
-OK: Workflow is valid -- no conflicts, deadlocks, cycles, or unreachable scenarios.
+✅ Workflow is valid — no conflicts, deadlocks, cycles, or unreachable scenarios.
 ```
 
 Or with issues found:
 
 ```
-CONFLICTS (1):
-  - from "In progress": "assign_reviewer" and "auto_merge" can both match the same item
+⚡ CONFLICTS (1):
+  • from "In progress": "assign_reviewer" and "auto_merge" can both match the same item
 
-DEADLOCKS (2):
-  - "In review" -- no outgoing scenario
-  - "Testing" -- no outgoing scenario
+💀 DEADLOCKS (2):
+  • "In review" — no outgoing scenario
+  • "Testing" — no outgoing scenario
 
-UNREACHABLE SCENARIOS (1):
-  - "start_review"
+🚫 UNREACHABLE SCENARIOS (1):
+  • "start_review"
 ```
 
 ## Config Structure
