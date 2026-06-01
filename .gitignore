@@ -1,5 +1,7 @@
 # Binary
 go-prolog-mcp
+go-prolog-mcp.exe
+go-prolog-mcp-darwin*
 
 # IDE
 .vscode/
