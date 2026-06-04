@@ -24,6 +24,7 @@ type ScenarioDef struct {
 	RequiredLabels []string `json:"required_labels,omitempty"`
 	WithoutLabels  []string `json:"without_labels,omitempty"`
 	RequiredLabel  string   `json:"required_label,omitempty"`
+	Disable        bool     `json:"disable,omitempty"`
 }
 
 // LoadFromFile reads an orchestrator config.json and returns Prolog scenario facts.
@@ -67,6 +68,11 @@ func ConvertToFacts(cfg OrcConfig) ([]prolog.ScenarioFact, []string, error) {
 		// Skip non-AI, non-bridge, non-merge, non-shell — all types are valid
 		// as long as they have trigger and next status.
 		if sc.TriggerStatus == "" || sc.NextStatus == "" {
+			continue
+		}
+
+		// Skip disabled scenarios (matching orchestrator's behavior).
+		if sc.Disable {
 			continue
 		}
 
