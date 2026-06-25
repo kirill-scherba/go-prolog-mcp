@@ -12,8 +12,9 @@ import (
 
 // OrcConfig mirrors the relevant subset of orchestrator-watchdog's config.json.
 type OrcConfig struct {
-	Statuses map[string]string                `json:"statuses"`
-	Scenarios map[string]ScenarioDef          `json:"scenarios"`
+	Statuses        map[string]string       `json:"statuses"`
+	Scenarios       map[string]ScenarioDef  `json:"scenarios"`
+	TerminalStatuses []string               `json:"terminal_statuses"`
 }
 
 // ScenarioDef mirrors config.ScenarioConfig for loading from JSON.
@@ -27,39 +28,46 @@ type ScenarioDef struct {
 	Disable        bool     `json:"disable,omitempty"`
 }
 
-// LoadFromFile reads an orchestrator config.json and returns Prolog scenario facts.
-func LoadFromFile(path string) ([]prolog.ScenarioFact, []string, error) {
+// LoadFromFile reads an orchestrator config.json and returns Prolog scenario
+// facts, board statuses, and terminal statuses.
+func LoadFromFile(path string) ([]prolog.ScenarioFact, []string, []string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, nil, fmt.Errorf("read config: %w", err)
+		return nil, nil, nil, fmt.Errorf("read config: %w", err)
 	}
 
 	var cfg OrcConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, nil, fmt.Errorf("parse config: %w", err)
+		return nil, nil, nil, fmt.Errorf("parse config: %w", err)
 	}
 
 	return ConvertToFacts(cfg)
 }
 
 // LoadFromJSON reads orchestrator config from a JSON string.
-func LoadFromJSON(jsonData string) ([]prolog.ScenarioFact, []string, error) {
+func LoadFromJSON(jsonData string) ([]prolog.ScenarioFact, []string, []string, error) {
 	var cfg OrcConfig
 	if err := json.Unmarshal([]byte(jsonData), &cfg); err != nil {
-		return nil, nil, fmt.Errorf("parse config: %w", err)
+		return nil, nil, nil, fmt.Errorf("parse config: %w", err)
 	}
 
 	return ConvertToFacts(cfg)
 }
 
-// ConvertToFacts converts an OrcConfig into Prolog scenario facts and board statuses.
-func ConvertToFacts(cfg OrcConfig) ([]prolog.ScenarioFact, []string, error) {
+// ConvertToFacts converts an OrcConfig into Prolog scenario facts, board
+// statuses, and terminal statuses.
+func ConvertToFacts(cfg OrcConfig) ([]prolog.ScenarioFact, []string, []string, error) {
 	// Collect all unique board statuses from statuses map + trigger/next from scenarios.
 	statusSet := make(map[string]bool)
 
 	// Add statuses from the statuses map.
 	for _, v := range cfg.Statuses {
 		statusSet[v] = true
+	}
+
+	// Add terminal statuses to the board status set.
+	for _, ts := range cfg.TerminalStatuses {
+		statusSet[ts] = true
 	}
 
 	var facts []prolog.ScenarioFact
@@ -102,5 +110,5 @@ func ConvertToFacts(cfg OrcConfig) ([]prolog.ScenarioFact, []string, error) {
 		statuses = append(statuses, s)
 	}
 
-	return facts, statuses, nil
+	return facts, statuses, cfg.TerminalStatuses, nil
 }

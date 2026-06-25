@@ -32,7 +32,7 @@ func TestConvertToFacts_DisabledScenarios(t *testing.T) {
 		t.Fatalf("failed to parse test config: %v", err)
 	}
 
-	facts, statuses, err := ConvertToFacts(cfg)
+	facts, statuses, _, err := ConvertToFacts(cfg)
 	if err != nil {
 		t.Fatalf("ConvertToFacts failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestConvertToFacts_AllDisabled(t *testing.T) {
 		t.Fatalf("failed to parse test config: %v", err)
 	}
 
-	facts, statuses, err := ConvertToFacts(cfg)
+	facts, statuses, _, err := ConvertToFacts(cfg)
 	if err != nil {
 		t.Fatalf("ConvertToFacts failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestConvertToFacts_MixedScenarios(t *testing.T) {
 		t.Fatalf("failed to parse test config: %v", err)
 	}
 
-	facts, _, err := ConvertToFacts(cfg)
+	facts, _, _, err := ConvertToFacts(cfg)
 	if err != nil {
 		t.Fatalf("ConvertToFacts failed: %v", err)
 	}

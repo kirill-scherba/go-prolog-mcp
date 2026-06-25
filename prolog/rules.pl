@@ -25,11 +25,11 @@ blocked_by_without(Req, Without) :-
     member(Lbl, Without).
 
 %% ---------------------------------------------------------------------------
-%% 2. DEADLOCK: a status with no outgoing scenario (except Done).
+%% 2. DEADLOCK: a status with no outgoing scenario (except terminal states).
 %% ---------------------------------------------------------------------------
 deadlock(Status) :-
     board_status(Status),
-    Status \= 'Done',
+    \+ terminal_status(Status),
     \+ scenario(_, Status, _, _, _).
 
 %% ---------------------------------------------------------------------------

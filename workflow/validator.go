@@ -20,25 +20,25 @@ type ValidationResult struct {
 
 // ValidateConfig validates from JSON string.
 func ValidateConfig(cfgJSON string) (*ValidationResult, error) {
-	facts, statuses, err := LoadFromJSON(cfgJSON)
+	facts, statuses, terminalStatuses, err := LoadFromJSON(cfgJSON)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return Validate(facts, statuses)
+	return Validate(facts, statuses, terminalStatuses)
 }
 
 // ValidateFile validates from a file path.
 func ValidateFile(path string) (*ValidationResult, error) {
-	facts, statuses, err := LoadFromFile(path)
+	facts, statuses, terminalStatuses, err := LoadFromFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
-	return Validate(facts, statuses)
+	return Validate(facts, statuses, terminalStatuses)
 }
 
 // Validate runs Prolog validation rules against scenario facts.
-func Validate(facts []prolog.ScenarioFact, statuses []string) (*ValidationResult, error) {
-	eng, err := NewEngine(facts, statuses)
+func Validate(facts []prolog.ScenarioFact, statuses []string, terminalStatuses []string) (*ValidationResult, error) {
+	eng, err := NewEngine(facts, statuses, terminalStatuses)
 	if err != nil {
 		return nil, fmt.Errorf("create engine: %w", err)
 	}
