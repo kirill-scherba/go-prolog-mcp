@@ -22,6 +22,8 @@ main.go (MCP server + CLI)
   +-- prolog/             Prolog engine wrapper
         engine.go         Engine, program builder, query methods
         rules.pl          Embedded Prolog validation rules
+        memory_rules.pl   Embedded memory consistency rules
+        memory_verify.go  Memory verification types and queries
 ```
 
 ## MCP Tools
@@ -32,6 +34,7 @@ main.go (MCP server + CLI)
 | `validate_workflow_file` | Validate a workflow config from file path | `path` |
 | `debug_query` | Run arbitrary Prolog code (rules + query) | `code` |
 | `select_tasks` | Select tasks to trigger based on workflow rules | `tasks` |
+| `memory_verify` | Verify memory facts for contradictions and anomalies | `facts` |
 
 ### validate_workflow
 
@@ -64,6 +67,38 @@ Feed current board tasks and get back which scenarios should trigger:
   ]
 }
 ```
+
+### memory_verify
+
+Check memory facts for contradictions and anomalies. Optional `rules` can extend or override defaults.
+
+```json
+{
+  "facts": [
+    { "key": "feature-x", "category": "feature", "attr": "status", "value": "completed" },
+    { "key": "feature-x", "category": "docs", "attr": "status", "value": "stale" }
+  ]
+}
+```
+
+Returns:
+
+```json
+{
+  "contradictions": [
+    { "key": "feature-x", "type": "completed-vs-stale-docs" }
+  ],
+  "anomalies": [],
+  "stats": {
+    "facts_checked": 2,
+    "contradictions_found": 1,
+    "anomalies_found": 0,
+    "rules_applied": 4
+  }
+}
+```
+
+The runtime injects `today('YYYY-MM-DD').` so date-aware rules can compare ISO 8601 deadlines.
 
 ## CLI Usage
 
@@ -159,6 +194,17 @@ The embedded `rules.pl` defines these validation predicates:
 | `can_trigger(IssueID, ScenarioName)` | Task matches a scenario's label requirements |
 
 Label matching is **case-insensitive** (e.g. `"Bug"` matches `"bug"`).
+
+### Memory consistency rules
+
+The embedded `memory_rules.pl` defines these predicates for the `memory_verify` tool:
+
+| Predicate | Purpose |
+|---|---|
+| `contradiction(Key, Type)` | Strict memory conflict for the given key |
+| `anomaly(Key, Type)` | Suspicious memory state for the given key |
+
+Built-in anomaly types include `completed-vs-stale-docs`, `expired-goal`, `conflicting-results`, and `baron-idle`.
 
 ## Development
 

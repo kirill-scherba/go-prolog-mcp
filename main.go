@@ -88,6 +88,20 @@ func main() {
 			),
 			Handler: handleSelectTasks,
 		},
+		{
+			Tool: mcp.NewTool("memory_verify",
+				mcp.WithDescription("Verify memory facts for contradictions and anomalies using Prolog rules. "+
+					"Returns contradictions, anomalies, and summary stats."),
+				mcp.WithAny("facts",
+					mcp.Required(),
+					mcp.Description("List of memory facts: [{key: string, category: string, attr: string, value: string}]"),
+				),
+				mcp.WithString("rules",
+					mcp.Description("Optional custom Prolog rules to add or override defaults"),
+				),
+			),
+			Handler: handleMemoryVerify,
+		},
 	}
 
 	s.AddTools(tools...)
@@ -217,6 +231,53 @@ func handleSelectTasks(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 			},
 		},
 	}, nil
+}
+
+func handleMemoryVerify(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	args := request.GetArguments()
+
+	factsRaw, ok := args["facts"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("facts must be an array")
+	}
+
+	var facts []prolog.MemoryFact
+	for _, fr := range factsRaw {
+		m, ok := fr.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		facts = append(facts, prolog.MemoryFact{
+			Key:      stringField(m, "key"),
+			Category: stringField(m, "category"),
+			Attr:     stringField(m, "attr"),
+			Value:    stringField(m, "value"),
+		})
+	}
+
+	customRules, _ := args["rules"].(string)
+
+	result, err := prolog.VerifyMemory(facts, customRules)
+	if err != nil {
+		return nil, fmt.Errorf("memory verify error: %w", err)
+	}
+
+	raw, _ := json.MarshalIndent(result, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.TextContent{
+				Type: "text",
+				Text: string(raw),
+			},
+		},
+	}, nil
+}
+
+func stringField(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 func resultToToolResult(result *workflow.ValidationResult) *mcp.CallToolResult {
