@@ -17,10 +17,18 @@ import (
 	"github.com/kirill-scherba/go-prolog-mcp/workflow"
 )
 
+// defaultMemoryStoreURL is set from the --memory-store-url CLI flag and used
+// by handleMemoryVerify when auto-fetching facts.
+var defaultMemoryStoreURL string
+
 func main() {
 	// CLI flag for config path.
 	configPath := flag.String("config", "", "Path to orchestrator config.json for CLI validation")
+	// CLI flag for memory-store-mcp URL, used by memory_verify when auto-fetching facts.
+	memoryStoreURL := flag.String("memory-store-url", prolog.DefaultMemoryStoreURL, "URL of memory-store-mcp for auto-fetching facts in memory_verify")
 	flag.Parse()
+
+	defaultMemoryStoreURL = *memoryStoreURL
 
 	// Also accept positional argument for backward compatibility.
 	path := *configPath
@@ -91,13 +99,17 @@ func main() {
 		{
 			Tool: mcp.NewTool("memory_verify",
 				mcp.WithDescription("Verify memory facts for contradictions and anomalies using Prolog rules. "+
+					"When called without 'facts', auto-fetches all facts from memory-store-mcp. "+
 					"Returns contradictions, anomalies, and summary stats."),
 				mcp.WithAny("facts",
-					mcp.Required(),
-					mcp.Description("List of memory facts: [{key: string, category: string, attr: string, value: string}]"),
+					mcp.Description("List of memory facts: [{key, category, attr, value}]. "+
+						"When omitted, facts are auto-fetched from memory-store-mcp."),
 				),
 				mcp.WithString("rules",
 					mcp.Description("Optional custom Prolog rules to add or override defaults"),
+				),
+				mcp.WithString("memory_store_url",
+					mcp.Description("URL of memory-store-mcp (default: --memory-store-url flag)"),
 				),
 			),
 			Handler: handleMemoryVerify,
@@ -236,23 +248,34 @@ func handleSelectTasks(ctx context.Context, request mcp.CallToolRequest) (*mcp.C
 func handleMemoryVerify(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	args := request.GetArguments()
 
-	factsRaw, ok := args["facts"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("facts must be an array")
-	}
-
 	var facts []prolog.MemoryFact
-	for _, fr := range factsRaw {
-		m, ok := fr.(map[string]interface{})
-		if !ok {
-			continue
+	var fetchErr error
+
+	if factsRaw, ok := args["facts"].([]interface{}); ok {
+		// Existing manual path.
+		for _, fr := range factsRaw {
+			m, ok := fr.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			facts = append(facts, prolog.MemoryFact{
+				Key:      stringField(m, "key"),
+				Category: stringField(m, "category"),
+				Attr:     stringField(m, "attr"),
+				Value:    stringField(m, "value"),
+			})
 		}
-		facts = append(facts, prolog.MemoryFact{
-			Key:      stringField(m, "key"),
-			Category: stringField(m, "category"),
-			Attr:     stringField(m, "attr"),
-			Value:    stringField(m, "value"),
-		})
+	} else {
+		// New auto-fetch path.
+		url := stringArg(args, "memory_store_url")
+		if url == "" {
+			url = defaultMemoryStoreURL
+		}
+
+		facts, fetchErr = prolog.FetchMemoryFacts(ctx, url)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("auto-fetch memory facts: %w", fetchErr)
+		}
 	}
 
 	customRules, _ := args["rules"].(string)
@@ -275,6 +298,14 @@ func handleMemoryVerify(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 
 func stringField(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+// stringArg extracts a string argument from the tool request argument map.
+func stringArg(args map[string]interface{}, key string) string {
+	if v, ok := args[key].(string); ok {
 		return v
 	}
 	return ""

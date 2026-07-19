@@ -56,7 +56,7 @@ func TestBuildProgram(t *testing.T) {
 	}
 	statuses := []string{"Backlog", "In progress", "Done"}
 
-	program := BuildProgram(scenarios, statuses)
+	program := BuildProgram(scenarios, statuses, nil)
 
 	if !strings.Contains(program, "conflict") {
 		t.Error("BuildProgram output missing conflict rule")
@@ -90,7 +90,7 @@ func TestBuildProgramWithTasks(t *testing.T) {
 		{ID: 1, Status: "Backlog", Labels: []string{"approved"}},
 	}
 
-	program := BuildProgramWithTasks(scenarios, statuses, tasks)
+	program := BuildProgramWithTasks(scenarios, statuses, nil, tasks)
 
 	if !strings.Contains(program, "task(1, 'Backlog', ['approved']).") {
 		t.Error("BuildProgramWithTasks missing task fact")
