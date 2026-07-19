@@ -14,6 +14,9 @@ The server runs over **stdio transport** (standard MCP protocol) and can also be
 ```
 main.go (MCP server + CLI)
   |
+  +-- mcpclient/        Minimal MCP JSON-RPC HTTP client
+  |     client.go         MCP client with Streamable HTTP + SSE fallback
+  |
   +-- workflow/           Config loading and validation orchestration
   |     facts.go          Config parsing, Prolog fact generation
   |     engine.go         Engine constructors
@@ -24,6 +27,7 @@ main.go (MCP server + CLI)
         rules.pl          Embedded Prolog validation rules
         memory_rules.pl   Embedded memory consistency rules
         memory_verify.go  Memory verification types and queries
+        memory_fetcher.go Auto-fetch facts from memory-store-mcp
 ```
 
 ## MCP Tools
@@ -34,7 +38,7 @@ main.go (MCP server + CLI)
 | `validate_workflow_file` | Validate a workflow config from file path | `path` |
 | `debug_query` | Run arbitrary Prolog code (rules + query) | `code` |
 | `select_tasks` | Select tasks to trigger based on workflow rules | `tasks` |
-| `memory_verify` | Verify memory facts for contradictions and anomalies | `facts` |
+| `memory_verify` | Verify memory facts for contradictions and anomalies | `facts` (optional), `rules` (optional), `memory_store_url` (optional) |
 
 ### validate_workflow
 
@@ -72,6 +76,10 @@ Feed current board tasks and get back which scenarios should trigger:
 
 Check memory facts for contradictions and anomalies. Optional `rules` can extend or override defaults.
 
+When `facts` is omitted, the tool automatically connects to **memory-store-mcp** (via the `--memory-store-url` flag or the `memory_store_url` parameter), fetches all keys under the `memory/` prefix, normalizes them into facts, and runs the rules.
+
+#### Manual mode
+
 ```json
 {
   "facts": [
@@ -80,6 +88,16 @@ Check memory facts for contradictions and anomalies. Optional `rules` can extend
   ]
 }
 ```
+
+#### Auto-fetch mode
+
+```json
+{
+  "memory_store_url": "http://localhost:7711/memory-store-mcp"
+}
+```
+
+If the URL is omitted, the default is `http://localhost:7711/memory-store-mcp`.
 
 Returns:
 
@@ -226,6 +244,9 @@ go vet ./...
 
 # Run as MCP server
 go-prolog-mcp
+
+# Run as MCP server pointing to a custom memory-store-mcp
+go-prolog-mcp --memory-store-url http://localhost:7711/memory-store-mcp
 
 # Run as CLI
 go-prolog-mcp --config testdata/config.json

@@ -20,6 +20,7 @@ func TestValidate(t *testing.T) {
 			name: "valid/minimal",
 			config: `{
 				"statuses": { "backlog": "Backlog", "done": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"finish": { "trigger_status": "Backlog", "next_status": "Done" }
 				}
@@ -30,6 +31,7 @@ func TestValidate(t *testing.T) {
 			name: "valid/multi_scenario",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "ir": "In review", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":   { "trigger_status": "Backlog", "next_status": "In progress" },
 					"review":  { "trigger_status": "In progress", "next_status": "In review" },
@@ -43,6 +45,7 @@ func TestValidate(t *testing.T) {
 			name: "valid/with_labels",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "r": "Review", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":     { "trigger_status": "Backlog", "next_status": "In progress" },
 					"to_review": { "trigger_status": "In progress", "next_status": "Review", "required_labels": ["bug"] },
@@ -57,6 +60,7 @@ func TestValidate(t *testing.T) {
 			name: "conflict/two_from_same",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "r": "Review", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":     { "trigger_status": "Backlog", "next_status": "In progress" },
 					"to_review": { "trigger_status": "In progress", "next_status": "Review", "required_labels": ["approved"] },
@@ -76,6 +80,7 @@ func TestValidate(t *testing.T) {
 			name: "conflict/with_without_protection",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "r": "Review", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":     { "trigger_status": "Backlog", "next_status": "In progress" },
 					"to_review": { "trigger_status": "In progress", "next_status": "Review", "required_labels": ["approved"], "without_labels": ["urgent"] },
@@ -90,6 +95,7 @@ func TestValidate(t *testing.T) {
 			name: "deadlock/simple",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "stuck": "Stuck", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":     { "trigger_status": "Backlog", "next_status": "In progress" },
 					"get_stuck": { "trigger_status": "In progress", "next_status": "Stuck" }
@@ -105,6 +111,7 @@ func TestValidate(t *testing.T) {
 			name: "deadlock/no_deadlock",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":  { "trigger_status": "Backlog", "next_status": "In progress" },
 					"finish": { "trigger_status": "In progress", "next_status": "Done" }
@@ -117,6 +124,7 @@ func TestValidate(t *testing.T) {
 			name: "unreachable/simple",
 			config: `{
 				"statuses": { "b": "Backlog", "ip": "In progress", "hidden": "Hidden", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":  { "trigger_status": "Backlog", "next_status": "In progress" },
 					"finish": { "trigger_status": "In progress", "next_status": "Done" },
@@ -129,12 +137,14 @@ func TestValidate(t *testing.T) {
 			},
 		},
 		{
-			// Scenario from Backlog is never unreachable.
-			name: "unreachable/backlog_entry",
+			// Scenario with empty trigger_status should be skipped.
+			name: "scenario/skip_empty_trigger",
 			config: `{
 				"statuses": { "b": "Backlog", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
-					"direct": { "trigger_status": "Backlog", "next_status": "Done" }
+					"valid":      { "trigger_status": "Backlog", "next_status": "Done" },
+					"no_trigger": { "next_status": "Done" }
 				}
 			}`,
 			want: &ValidationResult{Valid: true},
@@ -143,7 +153,8 @@ func TestValidate(t *testing.T) {
 			// A -> B -> A creates a cycle for both A and B.
 			name: "cycle/simple",
 			config: `{
-				"statuses": { "a": "A", "b": "B" },
+				"statuses": { "a": "A", "b": "B", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"a_to_b": { "trigger_status": "A", "next_status": "B" },
 					"b_to_a": { "trigger_status": "B", "next_status": "A" }
@@ -159,6 +170,7 @@ func TestValidate(t *testing.T) {
 			name: "cycle/no_cycle",
 			config: `{
 				"statuses": { "b": "Backlog", "a": "A", "b2": "B", "c": "C", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"start":  { "trigger_status": "Backlog", "next_status": "A" },
 					"a_to_b":  { "trigger_status": "A", "next_status": "B" },
@@ -178,6 +190,7 @@ func TestValidate(t *testing.T) {
 			name: "scenario/skip_empty_trigger",
 			config: `{
 				"statuses": { "b": "Backlog", "d": "Done" },
+				"terminal_statuses": ["Done"],
 				"scenarios": {
 					"valid":      { "trigger_status": "Backlog", "next_status": "Done" },
 					"no_trigger": { "next_status": "Done" }
