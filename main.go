@@ -100,10 +100,15 @@ func main() {
 			Tool: mcp.NewTool("memory_verify",
 				mcp.WithDescription("Verify memory facts for contradictions and anomalies using Prolog rules. "+
 					"When called without 'facts', auto-fetches all facts from memory-store-mcp. "+
+					"When called with 'query', searches memory by keyword and checks for contradictions. "+
 					"Returns contradictions, anomalies, and summary stats."),
 				mcp.WithAny("facts",
 					mcp.Description("List of memory facts: [{key, category, attr, value}]. "+
 						"When omitted, facts are auto-fetched from memory-store-mcp."),
+				),
+				mcp.WithString("query",
+					mcp.Description("Keyword to search memory for (uses memory_find). "+
+						"All matching entries are collected under one key and checked for contradictions."),
 				),
 				mcp.WithString("rules",
 					mcp.Description("Optional custom Prolog rules to add or override defaults"),
@@ -251,7 +256,17 @@ func handleMemoryVerify(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 	var facts []prolog.MemoryFact
 	var fetchErr error
 
-	if factsRaw, ok := args["facts"].([]interface{}); ok {
+	if query, ok := args["query"].(string); ok && query != "" {
+		// Query mode: search memory by keyword, collect under one key.
+		url := stringArg(args, "memory_store_url")
+		if url == "" {
+			url = defaultMemoryStoreURL
+		}
+		facts, fetchErr = prolog.FetchMemoryFactsByQuery(ctx, url, query)
+		if fetchErr != nil {
+			return nil, fmt.Errorf("query memory facts: %w", fetchErr)
+		}
+	} else if factsRaw, ok := args["facts"].([]interface{}); ok {
 		// Existing manual path.
 		for _, fr := range factsRaw {
 			m, ok := fr.(map[string]interface{})
@@ -266,7 +281,7 @@ func handleMemoryVerify(ctx context.Context, request mcp.CallToolRequest) (*mcp.
 			})
 		}
 	} else {
-		// New auto-fetch path.
+		// Auto-fetch path (all memory).
 		url := stringArg(args, "memory_store_url")
 		if url == "" {
 			url = defaultMemoryStoreURL

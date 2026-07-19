@@ -82,6 +82,173 @@ func FetchMemoryFactsWithStats(ctx context.Context, url string, stats FetchStats
 	return facts, nil
 }
 
+// FetchMemoryFactsByQuery searches memory-store-mcp by keyword using
+// memory_find, fetches all matching entries, and normalizes them into facts
+// with a single key matching the query. This lets Prolog find contradictions
+// across entries that refer to the same subject.
+func FetchMemoryFactsByQuery(ctx context.Context, url, query string) ([]MemoryFact, error) {
+	if url == "" {
+		url = DefaultMemoryStoreURL
+	}
+	if query == "" {
+		return nil, fmt.Errorf("query is required")
+	}
+
+	client := mcpclient.NewClient(url, 0)
+	defer client.Close()
+
+	// Call memory_find to get matching keys.
+	raw, err := client.CallToolRaw(ctx, "memory_find", map[string]interface{}{
+		"keyword": query,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("memory_find: %w", err)
+	}
+
+	// Parse the text response to extract keys.
+	// Format: "Found N result(s) for \"query\":\n1. memory/key\n..."
+	lines := strings.Split(strings.TrimSpace(raw), "\n")
+	var keys []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Skip header and empty lines.
+		if line == "" || strings.HasPrefix(line, "Found") || strings.HasPrefix(line, "No memories") {
+			continue
+		}
+		// Lines start with "N. memory/key" — strip the prefix.
+		if idx := strings.Index(line, "memory/"); idx >= 0 {
+			key := strings.TrimSpace(line[idx:])
+			// Remove trailing date if present (from memory_list display).
+			if spaceIdx := strings.Index(key, " "); spaceIdx > 0 {
+				key = key[:spaceIdx]
+			}
+			keys = append(keys, key)
+		}
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("no memories found for query %q", query)
+	}
+
+	// Fetch each key and normalize, forcing the short key to the query value.
+	var facts []MemoryFact
+	for _, key := range keys {
+		rawValue, err := client.CallTool(ctx, "memory_get", map[string]interface{}{
+			"key": key,
+		})
+		if err != nil {
+			continue
+		}
+
+		entryFacts := normalizeWithKey(key, rawValue, query)
+		facts = append(facts, entryFacts...)
+	}
+
+	if len(facts) == 0 {
+		return nil, fmt.Errorf("found %d keys for %q but could not extract facts", len(keys), query)
+	}
+
+	return facts, nil
+}
+
+// normalizeWithKey normalizes a memory entry like NormalizeMemoryEntry but
+// forces the Prolog key to the given overrideKey instead of extracting it
+// from the memory key path.
+func normalizeWithKey(memKey string, value interface{}, overrideKey string) []MemoryFact {
+	parts := keyPathParts(memKey)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	categories := extractCategories(parts)
+
+	innerValue, ok := unwrapMemoryValue(value)
+	if !ok {
+		return nil
+	}
+
+	// Normalize like in NormalizeMemoryEntry but with overrideKey.
+	valueMap, ok := innerValue.(map[string]interface{})
+	if !ok {
+		if len(categories) == 0 {
+			return nil
+		}
+		// Plain text or wrapper: extract wrapper fields.
+		var facts []MemoryFact
+		for _, category := range categories {
+			if wrapper, ok := value.(map[string]interface{}); ok {
+				for _, attr := range []string{"summary", "status", "priority", "progress", "deadline", "timestamp"} {
+					if val, exists := wrapper[attr]; exists && val != nil {
+						vs := valueToString(val)
+						if vs != "" {
+							facts = append(facts, MemoryFact{
+								Key:      overrideKey,
+								Category: category,
+								Attr:     attr,
+								Value:    vs,
+							})
+						}
+					}
+				}
+				if tags, exists := wrapper["tags"]; exists {
+					if tagArr, ok := tags.([]interface{}); ok {
+						for _, t := range tagArr {
+							facts = append(facts, MemoryFact{
+								Key:      overrideKey,
+								Category: category,
+								Attr:     "tag",
+								Value:    valueToString(t),
+							})
+						}
+					}
+				}
+			}
+			// Try extractFieldsFromText on the raw inner value.
+			if contentStr, ok := innerValue.(string); ok && contentStr != "" {
+				extras := extractFieldsFromText(contentStr)
+				for _, ef := range extras {
+					facts = append(facts, MemoryFact{
+						Key:      overrideKey,
+						Category: category,
+						Attr:     ef.attr,
+						Value:    ef.value,
+					})
+				}
+			}
+		}
+		return facts
+	}
+
+	// JSON content path.
+	var facts []MemoryFact
+	for _, category := range categories {
+		for attr, val := range valueMap {
+			facts = append(facts, MemoryFact{
+				Key:      overrideKey,
+				Category: category,
+				Attr:     attr,
+				Value:    valueToString(val),
+			})
+		}
+		if wrapper, ok := value.(map[string]interface{}); ok {
+			for _, attr := range []string{"summary", "status", "priority", "progress", "deadline", "timestamp"} {
+				if val, exists := wrapper[attr]; exists && val != nil {
+					vs := valueToString(val)
+					if vs != "" && vs != valueToString(valueMap[attr]) {
+						facts = append(facts, MemoryFact{
+							Key:      overrideKey,
+							Category: category,
+							Attr:     attr,
+							Value:    vs,
+						})
+					}
+				}
+			}
+		}
+	}
+	return facts
+}
+
 // memoryListHeaderPattern matches the "Found N memories:" header line returned
 // by memory-store-mcp's memory_list tool.
 var memoryListHeaderPattern = regexp.MustCompile(`^Found\s+\d+\s+memories?:`)
@@ -188,19 +355,60 @@ func NormalizeMemoryEntry(key string, value interface{}) []MemoryFact {
 
 	valueMap, ok := innerValue.(map[string]interface{})
 	if !ok {
-		// Content is not a JSON object: emit a single raw-content fact so the
-		// entry is not silently lost.
+		// Content is not a JSON object: emit facts from wrapper fields
+		// (summary, status, tags, timestamp, priority, etc.) so structured
+		// data is not lost even when content is plain text.
 		if len(categories) == 0 {
 			return nil
 		}
-		return []MemoryFact{
-			{
-				Key:      shortKey,
-				Category: categories[0],
-				Attr:     "content",
-				Value:    valueToString(innerValue),
-			},
+		var facts []MemoryFact
+		for _, category := range categories {
+			// Extract wrapper-level fields for non-JSON content.
+			if wrapper, ok := value.(map[string]interface{}); ok {
+				for _, attr := range []string{"summary", "status", "priority", "progress", "deadline", "timestamp"} {
+					if val, exists := wrapper[attr]; exists && val != nil {
+						vs := valueToString(val)
+						if vs != "" {
+							facts = append(facts, MemoryFact{
+								Key:      shortKey,
+								Category: category,
+								Attr:     attr,
+								Value:    vs,
+							})
+						}
+					}
+				}
+				// tags are an array
+				if tags, exists := wrapper["tags"]; exists {
+					if tagArr, ok := tags.([]interface{}); ok {
+						for _, t := range tagArr {
+							facts = append(facts, MemoryFact{
+								Key:      shortKey,
+								Category: category,
+								Attr:     "tag",
+								Value:    valueToString(t),
+							})
+						}
+					}
+				}
+			}
 		}
+		// Also try to extract structured fields from plain text content
+		// by matching key patterns like "deadline: ...", "progress: ...", etc.
+		if contentStr, ok := innerValue.(string); ok && contentStr != "" {
+			extras := extractFieldsFromText(contentStr)
+			for _, ef := range extras {
+				for _, category := range categories {
+					facts = append(facts, MemoryFact{
+						Key:      shortKey,
+						Category: category,
+						Attr:     ef.attr,
+						Value:    ef.value,
+					})
+				}
+			}
+		}
+		return facts
 	}
 
 	var facts []MemoryFact
@@ -212,6 +420,28 @@ func NormalizeMemoryEntry(key string, value interface{}) []MemoryFact {
 				Attr:     attr,
 				Value:    valueToString(val),
 			})
+		}
+	}
+
+	// Also add wrapper-level fields (summary, status, tags) if not already in valueMap
+	if wrapper, ok := value.(map[string]interface{}); ok {
+		for _, attr := range []string{"summary", "status", "priority", "progress", "deadline", "timestamp"} {
+			if val, exists := wrapper[attr]; exists && val != nil {
+				vs := valueToString(val)
+				if vs != "" {
+					// Only add if valueMap didn't already have this attr (avoid duplicates)
+					if _, inMap := valueMap[attr]; !inMap {
+						for _, category := range categories {
+							facts = append(facts, MemoryFact{
+								Key:      shortKey,
+								Category: category,
+								Attr:     attr,
+								Value:    vs,
+							})
+						}
+					}
+				}
+			}
 		}
 	}
 
@@ -294,6 +524,14 @@ func extractCategories(parts []string) []string {
 	// First segment is the top-level scope (project, user, technical, auto).
 	add(parts[0])
 
+	// Map known plural/misspelled scopes to rule-friendly singulars.
+	if parts[0] == "goals" {
+		add("goal")
+	}
+	if parts[0] == "bugs" {
+		add("bug")
+	}
+
 	// For project memories the third segment is the concrete category.
 	if parts[0] == "project" && len(parts) >= 3 {
 		add(parts[2])
@@ -356,4 +594,67 @@ func valueToString(v interface{}) string {
 	default:
 		return fmt.Sprint(x)
 	}
+}
+
+// extractFieldsFromText tries to find structured key:value pairs in plain text
+// like "Deadline: 2026-06-30", "Progress: 0", "Priority: 10", "Assignee: baron".
+type extractedField struct {
+	attr  string
+	value string
+}
+
+func extractFieldsFromText(text string) []extractedField {
+	var fields []extractedField
+
+	// Map of patterns: attr name → list of [label regexp, value regexp]
+	type pattern struct {
+		label *regexp.Regexp
+		value string
+	}
+	patterns := []struct {
+		attr   string
+		labels []string
+	}{
+		{"deadline", []string{"deadline", "Deadline", "Дедлайн", "дедлайн", "срок"}},
+		{"progress", []string{"progress", "Progress", "Прогресс", "прогресс", "готовность"}},
+		{"priority", []string{"priority", "Priority", "Приоритет", "приоритет"}},
+		{"assignee", []string{"assignee", "Assignee", "Исполнитель", "исполнитель", "Ответственный", "ответственный"}},
+	}
+
+	for _, p := range patterns {
+		for _, lbl := range p.labels {
+			// Pattern: "Label: value" — value up to next comma, dot, newline or end
+			re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(lbl) + `\s*[:=]\s*([^,.\n]+)`)
+			matches := re.FindStringSubmatch(text)
+			if len(matches) >= 2 {
+				val := strings.TrimSpace(matches[1])
+				if val != "" {
+					fields = append(fields, extractedField{attr: p.attr, value: val})
+				}
+				break // first match wins for this attr
+			}
+		}
+	}
+
+	// Special: extract status=active from "Цель:" or статус
+	statusRe := regexp.MustCompile(`(?i)(?:status|статус)\s*[:=]\s*([^,.\n]+)`)
+	if m := statusRe.FindStringSubmatch(text); len(m) >= 2 {
+		fields = append(fields, extractedField{attr: "status", value: strings.TrimSpace(m[1])})
+	}
+	// If text starts with "Цель:" or "Goal:" and no status found, assume active
+	hasStatus := false
+	for _, f := range fields {
+		if f.attr == "status" {
+			hasStatus = true
+			break
+		}
+	}
+	if !hasStatus {
+		goalRe := regexp.MustCompile(`(?i)^\s*(?:Цель|Goal|Задача|Task)\s*[::]`)
+		if goalRe.MatchString(text) {
+			fields = append(fields, extractedField{attr: "status", value: "active"})
+		}
+	}
+
+	return fields
 }

@@ -43,3 +43,9 @@ anomaly(Key, 'conflicting-results') :-
 anomaly(Key, 'baron-idle') :-
     mem(Key, 'goal', 'assignee', 'baron'),
     mem(Key, 'goal', 'progress', '0').
+
+% Same key has contradicting status values (e.g. myth vs idea, active vs completed).
+anomaly(Key, 'dual-status') :-
+    mem(Key, _, 'status', ValueA),
+    mem(Key, _, 'status', ValueB),
+    ValueA @< ValueB.

@@ -242,7 +242,21 @@ func (e *Engine) QueryTriggerable() ([]TriggerResult, error) {
 }
 
 func escapeAtom(s string) string {
-	return strings.ReplaceAll(s, "'", "\\'")
+	s = strings.ReplaceAll(s, "'", "\\'")
+	// Заменяем любые символы, небезопасные для Prolog-атома в кавычках
+	var safe strings.Builder
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			safe.WriteRune(r)
+		} else if r == ' ' || r == '-' || r == '_' || r == '.' || r == '/' || r == '#' || r == ':' {
+			safe.WriteRune(r)
+		} else if r == '\n' || r == '\r' || r == '\t' {
+			safe.WriteRune(' ')
+		} else {
+			safe.WriteRune(' ')
+		}
+	}
+	return strings.TrimSpace(safe.String())
 }
 
 func labelList(labels []string) string {
