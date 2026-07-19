@@ -46,14 +46,18 @@ func (e *Engine) LoadProgram(program string) error {
 	return nil
 }
 
-// BuildProgram combines rules with scenario facts into one program string.
-func BuildProgram(scenarios []ScenarioFact, boardStatuses []string) string {
+// BuildProgram combines rules with scenario and terminal-status facts into one
+// program string. Terminal statuses are exempt from deadlock detection.
+func BuildProgram(scenarios []ScenarioFact, boardStatuses []string, terminalStatuses []string) string {
 	var b strings.Builder
 	b.WriteString(rulesPL)
 	b.WriteString("\n")
 
 	for _, s := range boardStatuses {
 		b.WriteString(fmt.Sprintf("board_status('%s').\n", escapeAtom(s)))
+	}
+	for _, s := range terminalStatuses {
+		b.WriteString(fmt.Sprintf("terminal_status('%s').\n", escapeAtom(s)))
 	}
 	for _, s := range scenarios {
 		b.WriteString(fmt.Sprintf("scenario('%s', '%s', '%s', %s, %s).\n",
@@ -204,10 +208,11 @@ type TriggerResult struct {
 	ScenarioName string `prolog:"ScenarioName"`
 }
 
-// BuildProgramWithTasks combines rules, scenarios, and task facts.
-func BuildProgramWithTasks(scenarios []ScenarioFact, boardStatuses []string, tasks []TaskFact) string {
+// BuildProgramWithTasks combines rules, scenarios, terminal-status facts,
+// and task facts.
+func BuildProgramWithTasks(scenarios []ScenarioFact, boardStatuses []string, terminalStatuses []string, tasks []TaskFact) string {
 	var b strings.Builder
-	b.WriteString(BuildProgram(scenarios, boardStatuses))
+	b.WriteString(BuildProgram(scenarios, boardStatuses, terminalStatuses))
 	b.WriteString("\n")
 
 	for _, t := range tasks {
