@@ -4,9 +4,19 @@ package prolog
 import (
 	_ "embed"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/ichiban/prolog"
+)
+
+var (
+	// rePredHead matches a Prolog predicate definition at the start of a line:
+	//   foo(...  or  foo(...) :-
+	rePredHead = regexp.MustCompile(`(?m)^\s*([a-zA-Z_]\w*)\s*\(`)
+	// reDiscontiguous extracts the predicate indicator from an error like:
+	//   "says/2 is discontiguous"
+	reDiscontiguous = regexp.MustCompile(`(\w+/\d+)`)
 )
 
 //go:embed rules.pl
@@ -38,12 +48,57 @@ func New() *Engine {
 	return &Engine{p: prolog.New(nil, nil)}
 }
 
+// Sanitize replaces problematic Unicode characters that the ichiban/prolog
+// parser cannot handle (em dash, en dash, typographic quotes, etc.).
+func Sanitize(program string) string {
+	program = strings.ReplaceAll(program, "\u2014", "-")   // em dash —
+	program = strings.ReplaceAll(program, "\u2013", "-")   // en dash –
+	program = strings.ReplaceAll(program, "\u2018", "'")   // left single quote '
+	program = strings.ReplaceAll(program, "\u2019", "'")   // right single quote '
+	program = strings.ReplaceAll(program, "\u201c", "\"")  // left double quote "
+	program = strings.ReplaceAll(program, "\u201d", "\"")  // right double quote "
+	program = strings.ReplaceAll(program, "\u2026", "...") // ellipsis …
+	program = strings.ReplaceAll(program, "\u00a0", " ")   // non-breaking space
+	return program
+}
+
 // LoadProgram loads a complete Prolog program (rules + facts) at once.
+// Automatically sanitizes Unicode and retries on discontiguous predicate errors
+// by adding the necessary discontiguous/1 directive.
 func (e *Engine) LoadProgram(program string) error {
-	if err := e.p.Exec(program); err != nil {
-		return fmt.Errorf("load prolog program: %w", err)
+	program = Sanitize(program)
+	return e.loadProgramRecursive(program)
+}
+
+// loadProgramRecursive tries to execute the program. If the parser complains
+// about a discontiguous predicate, it extracts the predicate indicator,
+// prepends a discontiguous/1 directive, and retries (up to 10 iterations).
+func (e *Engine) loadProgramRecursive(program string) error {
+	const maxRetries = 10
+
+	for range maxRetries {
+		err := e.p.Exec(program)
+		if err == nil {
+			return nil
+		}
+
+		errStr := err.Error()
+		if !strings.Contains(errStr, "discontiguous") {
+			return fmt.Errorf("load prolog program: %w", err)
+		}
+
+		// Extract predicate indicator like "says/2" from "says/2 is discontiguous".
+		m := reDiscontiguous.FindString(errStr)
+		if m == "" {
+			return fmt.Errorf("load prolog program (unparseable discontiguous error): %w", err)
+		}
+
+		// Prepend discontiguous directive and retry.
+		program = fmt.Sprintf(":- discontiguous(%s).\n%s", m, program)
 	}
-	return nil
+
+	reRun := e.p.Exec(program)
+	return fmt.Errorf("load prolog program (after %d retries): %w", maxRetries, reRun)
 }
 
 // BuildProgram combines rules with scenario and terminal-status facts into one
@@ -171,28 +226,46 @@ func (e *Engine) QueryScenarios() ([]string, error) {
 }
 
 // QueryRaw executes an arbitrary query and returns all solutions as a list of maps.
-func (e *Engine) QueryRaw(queryStr string) ([]map[string]string, error) {
-	sols, err := e.p.Query(queryStr)
-	if err != nil {
-		return nil, err
+// Handles side-effect-only queries (write, nl, etc.) gracefully by recovering
+// from panics and returning empty results when no variable bindings exist.
+func (e *Engine) QueryRaw(queryStr string) (results []map[string]string, err error) {
+	// Recover from nil pointer panics (e.g. Scan on write-only queries).
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("query panicked: %v", r)
+		}
+	}()
+
+	sols, qErr := e.p.Query(queryStr)
+	if qErr != nil {
+		return nil, qErr
 	}
 	defer sols.Close()
 
-	var results []map[string]string
-
 	for sols.Next() {
 		m := make(map[string]interface{})
-		if err := sols.Scan(m); err != nil {
-			return nil, err
+		if sErr := sols.Scan(m); sErr != nil {
+			// If scanning fails (e.g. no variables to bind), skip this solution
+			// but continue iterating.
+			continue
 		}
-		
+
+		if len(m) == 0 {
+			// Side-effect-only solution (write, nl, etc.) — no variables to return.
+			continue
+		}
+
 		res := make(map[string]string)
 		for k, v := range m {
 			res[k] = fmt.Sprint(v)
 		}
 		results = append(results, res)
 	}
-	return results, sols.Err()
+
+	if sErr := sols.Err(); sErr != nil {
+		return results, sErr
+	}
+	return results, nil
 }
 
 // TaskFact represents a board item as Prolog facts.
