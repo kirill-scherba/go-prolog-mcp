@@ -251,7 +251,8 @@ func (e *Engine) QueryRaw(queryStr string) (results []map[string]string, err err
 		}
 
 		if len(m) == 0 {
-			// Side-effect-only solution (write, nl, etc.) — no variables to return.
+			// Ground query (no variables) or side-effect-only — succeeded.
+			results = append(results, map[string]string{})
 			continue
 		}
 
