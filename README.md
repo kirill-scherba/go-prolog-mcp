@@ -7,6 +7,15 @@ An MCP server for orchestrator workflow validation using an embedded Prolog engi
 
 Built with [ichiban/prolog](https://github.com/ichiban/prolog) and the [MCP Go SDK](https://github.com/mark3labs/mcp-go).
 
+## Install in AnyText
+
+One binary for Linux and Windows; Go only, nothing to install next to it.
+
+1. AnyText → Настройки → MCP → «Доступные серверы» → **Prolog engine** → «Установить».
+2. No settings are needed: the engine keeps its state in memory and asks nothing.
+3. The tools appear in the chat: `debug_query`, `validate_workflow`, `validate_workflow_file`,
+   `select_tasks`, `memory_verify`.
+
 ## Architecture
 
 The server runs over **stdio transport** (standard MCP protocol) and can also be used as a standalone CLI tool for one-shot validation.
