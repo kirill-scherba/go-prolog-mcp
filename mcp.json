@@ -1,0 +1,21 @@
+{
+  "name": "go-prolog-mcp",
+  "title": {
+    "ru": "Prolog-движок",
+    "en": "Prolog engine"
+  },
+  "description": {
+    "ru": "Логический вывод и проверка правил: запросы на Prolog, проверка workflow, выбор задач, сверка памяти.",
+    "en": "Logic queries and rule checking: Prolog queries, workflow validation, task selection, memory verification."
+  },
+  "category": "logic",
+  "install": "binary",
+  "command": [
+    "go-prolog-mcp"
+  ],
+  "entries": {
+    "linux-amd64": "go-prolog-mcp",
+    "windows-amd64": "go-prolog-mcp.exe"
+  },
+  "docs": "https://github.com/kirill-scherba/go-prolog-mcp#install-in-anytext"
+}
